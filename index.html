@@ -1,0 +1,904 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>継続日記</title>
+<meta name="description" content="習慣の継続をカレンダーにワンタップで記録">
+<meta name="theme-color" content="#f6f5f2">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="継続日記">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+  :root {
+    --bg: #f6f5f2;
+    --surface: #ffffff;
+    --surface-2: #eeece7;
+    --text: #2b2a28;
+    --muted: #7a776f;
+    --border: #e2dfd8;
+    --sun: #b4574f;
+    --sat: #4f6fa3;
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+    --habit: #4f8a8b;
+    --on-habit: #ffffff;
+    --radius: 16px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151619;
+      --surface: #1e2024;
+      --surface-2: #2a2d32;
+      --text: #e8e6e1;
+      --muted: #9a978f;
+      --border: #32353b;
+      --sun: #d9837b;
+      --sat: #86a4d6;
+      --shadow: 0 1px 2px rgba(0,0,0,.3);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #151619;
+    --surface: #1e2024;
+    --surface-2: #2a2d32;
+    --text: #e8e6e1;
+    --muted: #9a978f;
+    --border: #32353b;
+    --sun: #d9837b;
+    --sat: #86a4d6;
+    --shadow: 0 1px 2px rgba(0,0,0,.3);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", Meiryo, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    line-height: 1.5;
+  }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; touch-action: manipulation; }
+
+  .app {
+    max-width: 520px;
+    margin: 0 auto;
+    padding: calc(12px + env(safe-area-inset-top)) 16px calc(96px + env(safe-area-inset-bottom));
+  }
+
+  /* 習慣タブ */
+  .tabs {
+    display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none;
+    margin: 0 -16px; padding: 4px 16px 12px;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: none; display: inline-flex; align-items: center; gap: 8px;
+    min-height: 44px; padding: 0 16px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+    white-space: nowrap; transition: background .15s, color .15s, border-color .15s;
+  }
+  .tab .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+  .tab[aria-selected="true"] { color: var(--text); border-color: var(--c); background: color-mix(in srgb, var(--c) 12%, var(--surface)); font-weight: 600; }
+  .tab.add { color: var(--muted); padding: 0 14px; font-size: 20px; }
+
+  /* 今日やったボタン */
+  .today-btn {
+    width: 100%; min-height: 88px; border-radius: 22px; border: 2px solid var(--habit);
+    background: var(--habit); color: var(--on-habit);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    box-shadow: var(--shadow);
+  }
+  /* 初回描画では色の遷移を見せない（.ready は描画後に付与） */
+  .ready .today-btn { transition: background .2s, color .2s, transform .1s; }
+  .today-btn:active { transform: scale(.98); }
+  .today-btn .main { font-size: 22px; font-weight: 700; letter-spacing: .04em; }
+  .today-btn .sub { font-size: 13px; opacity: .85; }
+  .today-btn.done { background: var(--surface); color: var(--habit); }
+  .today-btn.bump { animation: bump .4s cubic-bezier(.2,.8,.3,1.2); }
+  @keyframes bump { 0% { transform: scale(.95); } 55% { transform: scale(1.03); } 100% { transform: scale(1); } }
+
+  /* 統計 */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 8px; text-align: center; }
+  .stat .label { font-size: 12px; color: var(--muted); }
+  .stat .value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.3; }
+  .stat .value small { font-size: 13px; font-weight: 500; margin-left: 2px; color: var(--muted); }
+  .stat .note { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* カレンダー */
+  .calendar { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 10px 8px 12px; box-shadow: var(--shadow); touch-action: pan-y; }
+  .weekdays, .grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+  .weekdays { font-size: 12px; color: var(--muted); text-align: center; padding: 2px 0 6px; }
+  .weekdays .sun { color: var(--sun); }
+  .weekdays .sat { color: var(--sat); }
+  .grid { row-gap: 6px; }
+  .day {
+    position: relative; height: clamp(44px, 12.5vw, 56px);
+    border: 0; background: none; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-variant-numeric: tabular-nums; font-size: 16px;
+  }
+  .day .num { position: relative; z-index: 1; }
+  .day.sun .num { color: var(--sun); }
+  .day.sat .num { color: var(--sat); }
+  .day .fill {
+    position: absolute; inset: 3px; border-radius: 14px;
+    background: var(--habit); opacity: 0; transform: scale(.6);
+  }
+  .ready .day .fill { transition: opacity .15s, transform .15s; }
+  .day.done .fill { opacity: 1; transform: none; }
+  .day.done .num { color: var(--on-habit); font-weight: 600; }
+  /* 連続日をつなげる：隣も達成なら、その側の余白と角丸をなくす */
+  .day.jl .fill { left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+  .day.jr .fill { right: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .day .fill.pop { animation: pop .34s cubic-bezier(.2,.8,.3,1.25); }
+  @keyframes pop { 0% { transform: scale(.4); opacity: .4; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
+  .day.today::after {
+    content: ""; position: absolute; inset: 1px; border-radius: 16px;
+    border: 2px solid var(--text); pointer-events: none; z-index: 2;
+  }
+  .day.today .num { font-weight: 700; }
+  .day:disabled { cursor: default; }
+  .day.future .num { color: var(--muted); opacity: .45; }
+  .day:not(:disabled):active .num { transform: scale(.9); }
+
+  .hint { text-align: center; font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+
+  .empty { text-align: center; padding: 48px 16px; background: var(--surface); border: 1px dashed var(--border); border-radius: 20px; }
+  .empty p { color: var(--muted); margin: 0 0 16px; }
+
+  /* 下部バー */
+  .bottombar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border);
+    padding: 8px 16px calc(8px + env(safe-area-inset-bottom));
+  }
+  .bottombar .inner { max-width: 520px; margin: 0 auto; display: grid; grid-template-columns: 56px 1fr 56px 56px; gap: 8px; align-items: center; }
+  .icon-btn {
+    height: 56px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface);
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+  }
+  .icon-btn:disabled { opacity: .35; cursor: default; }
+  .month-btn { height: 56px; border-radius: 16px; border: 0; background: none; font-size: 18px; font-weight: 600; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; }
+  .month-btn small { font-size: 11px; font-weight: 400; color: var(--muted); }
+
+  /* ボトムシート */
+  dialog.sheet {
+    width: 100%; max-width: 520px; max-height: 88vh; margin: auto auto 0;
+    border: 0; border-radius: 22px 22px 0 0; padding: 0;
+    background: var(--surface); color: var(--text);
+  }
+  dialog.sheet[open] { animation: up .22s ease-out; }
+  @keyframes up { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+  dialog.sheet::backdrop { background: rgba(0,0,0,.35); }
+  .sheet-body { padding: 8px 16px calc(20px + env(safe-area-inset-bottom)); }
+  .grabber { width: 40px; height: 4px; border-radius: 2px; background: var(--border); margin: 8px auto 4px; }
+  .sheet h2 { font-size: 18px; margin: 8px 0 12px; }
+  .sheet h3 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 20px 0 8px; }
+  .list { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: 0; }
+  .row .dot { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+  .row .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .btn {
+    min-height: 48px; padding: 0 18px; border-radius: 14px; border: 1px solid var(--border);
+    background: var(--surface-2); font-weight: 600;
+  }
+  .btn.primary { background: var(--habit); border-color: var(--habit); color: var(--on-habit); }
+  .btn.danger { color: var(--sun); background: none; }
+  .btn.small { min-height: 40px; padding: 0 14px; font-weight: 500; background: none; }
+  .btn.block { width: 100%; }
+  .btn-row { display: flex; gap: 8px; }
+  .btn-row .btn { flex: 1; }
+  .segmented { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface-2); border-radius: 14px; padding: 4px; gap: 4px; }
+  .segmented button { min-height: 40px; border: 0; border-radius: 10px; background: none; color: var(--muted); }
+  .segmented button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: var(--shadow); }
+  .field { display: block; margin-bottom: 16px; }
+  .field > span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .field input[type="text"] { width: 100%; min-height: 48px; padding: 0 14px; border-radius: 14px; border: 1px solid var(--border); background: var(--bg); font-size: 16px; }
+  .swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .swatch { position: relative; height: 48px; border-radius: 14px; border: 0; background: var(--c); }
+  .swatch[aria-pressed="true"]::after { content: "✓"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 20px; font-weight: 700; }
+  .fineprint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom)); z-index: 20;
+    transform: translate(-50%, 8px); opacity: 0; pointer-events: none;
+    background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px;
+    max-width: calc(100% - 32px); transition: opacity .2s, transform .2s;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <nav class="tabs" id="tabs" role="tablist" aria-label="習慣"></nav>
+
+  <div id="main">
+    <button class="today-btn" id="todayBtn" type="button">
+      <span class="main" id="todayMain">今日やった！</span>
+      <span class="sub" id="todaySub"></span>
+    </button>
+
+    <section class="stats" aria-label="統計">
+      <div class="stat"><div class="label">現在の連続</div><div class="value" id="statCurrent">0<small>日</small></div></div>
+      <div class="stat"><div class="label">最長連続</div><div class="value" id="statLongest">0<small>日</small></div></div>
+      <div class="stat"><div class="label" id="statRateLabel">今月の達成率</div><div class="value" id="statRate">—</div><div class="note" id="statRateNote"></div></div>
+    </section>
+
+    <section class="calendar" id="calendar" aria-label="カレンダー">
+      <div class="weekdays" aria-hidden="true">
+        <div class="sun">日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div class="sat">土</div>
+      </div>
+      <div class="grid" id="grid"></div>
+    </section>
+    <p class="hint">日付をタップで記録／もう一度タップで取り消し</p>
+  </div>
+
+  <div class="empty" id="empty" hidden>
+    <p>まずは続けたい習慣を登録しましょう。</p>
+    <button class="btn primary" type="button" data-action="add-habit">＋ 習慣を追加</button>
+  </div>
+</div>
+
+<footer class="bottombar">
+  <div class="inner">
+    <button class="icon-btn" id="prevBtn" type="button" aria-label="前の月">‹</button>
+    <button class="month-btn" id="monthBtn" type="button"><span id="monthLabel"></span><small id="monthSub"></small></button>
+    <button class="icon-btn" id="nextBtn" type="button" aria-label="次の月">›</button>
+    <button class="icon-btn" id="settingsBtn" type="button" aria-label="設定">⚙</button>
+  </div>
+</footer>
+
+<dialog class="sheet" id="settingsSheet" aria-labelledby="settingsTitle">
+  <div class="grabber"></div>
+  <div class="sheet-body">
+    <h2 id="settingsTitle">設定</h2>
+
+    <h3>習慣</h3>
+    <div class="list" id="habitList"></div>
+    <div style="margin-top:8px"><button class="btn block" type="button" data-action="add-habit">＋ 習慣を追加</button></div>
+
+    <h3>表示</h3>
+    <div class="segmented" id="themeSeg" role="group" aria-label="テーマ">
+      <button type="button" data-theme-value="auto">自動</button>
+      <button type="button" data-theme-value="light">ライト</button>
+      <button type="button" data-theme-value="dark">ダーク</button>
+    </div>
+
+    <h3>データの引き継ぎ</h3>
+    <div class="btn-row">
+      <button class="btn" type="button" id="exportBtn">エクスポート</button>
+      <button class="btn" type="button" id="importBtn">インポート</button>
+    </div>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
+    <p class="fineprint">データはこの端末のブラウザ内にだけ保存されています。機種変更の前にエクスポートしたJSONファイルを、新しい端末でインポートしてください。</p>
+
+    <div style="margin-top:20px"><button class="btn block" type="button" data-close>閉じる</button></div>
+  </div>
+</dialog>
+
+<dialog class="sheet" id="habitSheet" aria-labelledby="habitTitle">
+  <div class="grabber"></div>
+  <form class="sheet-body" id="habitForm" method="dialog">
+    <h2 id="habitTitle">習慣を追加</h2>
+    <label class="field">
+      <span>名前</span>
+      <input type="text" id="habitName" maxlength="40" placeholder="例：勉強、筋トレ、日記" autocomplete="off" required>
+    </label>
+    <div class="field">
+      <span>色</span>
+      <div class="swatches" id="swatches"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn danger" type="button" id="deleteHabitBtn" hidden>削除</button>
+      <button class="btn" type="button" data-close>キャンセル</button>
+      <button class="btn primary" type="submit">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* ===== Core：画面に依存しない日付・集計ロジック（テスト対象） =====
+   日付は常にローカル時刻の "YYYY-MM-DD" 文字列で扱う。
+   toISOString() は UTC になり日本時間 0〜9 時に前日へずれるため使わない。 */
+const Core = (() => {
+  const pad = (n) => String(n).padStart(2, '0');
+  const KEY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+  function toKey(date) {
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+  function fromKey(key) {
+    const [, y, m, d] = KEY_RE.exec(key);
+    return new Date(Number(y), Number(m) - 1, Number(d));
+  }
+  function isKey(key) {
+    return typeof key === 'string' && KEY_RE.test(key) && toKey(fromKey(key)) === key;
+  }
+  // ミリ秒の加算ではなく「日」を足すので、月末・うるう年・夏時間でもずれない
+  function addDays(key, n) {
+    const d = fromKey(key);
+    return toKey(new Date(d.getFullYear(), d.getMonth(), d.getDate() + n));
+  }
+  function makeKey(y, m, d) { return `${y}-${pad(m)}-${pad(d)}`; }
+  function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); } // m は 1〜12
+  function firstWeekday(y, m) { return new Date(y, m - 1, 1).getDay(); } // 0 = 日曜
+
+  function pastKeys(set, todayKey) {
+    return [...set].filter((k) => k <= todayKey); // 同じ形式の文字列なので辞書順＝日付順
+  }
+
+  // 今日が未記録でも、昨日まで続いていれば連続は途切れていない扱い
+  function currentStreak(set, todayKey) {
+    let k = set.has(todayKey) ? todayKey : addDays(todayKey, -1);
+    let n = 0;
+    while (set.has(k)) { n++; k = addDays(k, -1); }
+    return n;
+  }
+
+  function longestStreak(set, todayKey) {
+    const keys = pastKeys(set, todayKey).sort();
+    let best = 0, run = 0, prev = null;
+    for (const k of keys) {
+      run = prev !== null && addDays(prev, 1) === k ? run + 1 : 1;
+      if (run > best) best = run;
+      prev = k;
+    }
+    return best;
+  }
+
+  // 分母は「その月のうち、開始日以降かつ今日までの日数」
+  function monthRate(set, y, m, todayKey, startKey) {
+    const first = makeKey(y, m, 1);
+    const last = makeKey(y, m, daysInMonth(y, m));
+    const from = startKey && startKey > first ? startKey : first;
+    const to = todayKey < last ? todayKey : last;
+    if (from > to) return { done: 0, total: 0, rate: null };
+    let total = 0, done = 0;
+    for (let k = from; k <= to; k = addDays(k, 1)) {
+      total++;
+      if (set.has(k)) done++;
+    }
+    return { done, total, rate: done / total };
+  }
+
+  // 読み込み・インポート時の検証。不正な値は捨てて正規化する
+  function normalize(data) {
+    if (!data || typeof data !== 'object' || !Array.isArray(data.habits)) return null;
+    const habits = [], records = {}, seen = new Set();
+    for (const h of data.habits) {
+      if (!h || typeof h.id !== 'string' || !h.id || seen.has(h.id)) continue;
+      seen.add(h.id);
+      habits.push({
+        id: h.id,
+        name: String(h.name ?? '').trim().slice(0, 40) || '無題',
+        color: /^#[0-9a-f]{6}$/i.test(h.color) ? h.color : '#4f8a8b',
+        createdAt: isKey(h.createdAt) ? h.createdAt : null,
+      });
+      const src = data.records && data.records[h.id];
+      const out = {};
+      if (src && typeof src === 'object') {
+        for (const k of Object.keys(src)) if (isKey(k) && src[k]) out[k] = 1;
+      }
+      records[h.id] = out;
+    }
+    const activeHabitId = habits.some((h) => h.id === data.activeHabitId) ? data.activeHabitId : (habits[0] ? habits[0].id : null);
+    const theme = ['auto', 'light', 'dark'].includes(data.theme) ? data.theme : 'auto';
+    return { version: 1, habits, records, activeHabitId, theme };
+  }
+
+  return { pad, toKey, fromKey, isKey, addDays, makeKey, daysInMonth, firstWeekday, currentStreak, longestStreak, monthRate, normalize };
+})();
+</script>
+
+<script>
+/* ===== アプリ本体 ===== */
+(() => {
+  const STORAGE_KEY = 'keizoku-nikki:v1';
+  const COLORS = ['#4f8a8b', '#5b7db1', '#8a6fb0', '#c2607a', '#c2785c', '#b08d3e', '#6c9a5b', '#6b7280'];
+  const $ = (id) => document.getElementById(id);
+
+  let todayKey = Core.toKey(new Date());
+  let state = load();
+  const t = Core.fromKey(todayKey);
+  let view = { y: t.getFullYear(), m: t.getMonth() + 1 };
+  let editingId = null;
+  let editingColor = COLORS[0];
+
+  // ---- 保存 ----
+  function emptyState() { return { version: 1, habits: [], records: {}, activeHabitId: null, theme: 'auto' }; }
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return (raw && Core.normalize(JSON.parse(raw))) || emptyState();
+    } catch (e) {
+      return emptyState();
+    }
+  }
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      toast('保存できませんでした（ブラウザの設定を確認してください）');
+    }
+  }
+
+  // ---- 補助 ----
+  const activeHabit = () => state.habits.find((h) => h.id === state.activeHabitId) || null;
+  const recordSet = (h) => new Set(Object.keys(state.records[h.id] || {}));
+  function startKeyOf(h, set) {
+    const earliest = [...set].sort()[0];
+    const created = h.createdAt || todayKey;
+    return earliest && earliest < created ? earliest : created;
+  }
+  function newId() {
+    return 'h_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+  let toastTimer;
+  function toast(msg) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  }
+  function restartAnimation(el, cls) {
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+  }
+
+  // ---- 記録 ----
+  function toggle(key) {
+    const h = activeHabit();
+    if (!h || key > todayKey) return;
+    const rec = state.records[h.id] || (state.records[h.id] = {});
+    const on = !rec[key];
+    if (on) rec[key] = 1; else delete rec[key];
+    save();
+    if (navigator.vibrate) navigator.vibrate(on ? 12 : 6);
+    render(on ? key : null);
+  }
+
+  // ---- 描画 ----
+  function render(poppedKey = null) {
+    applyTheme();
+    renderTabs();
+    const h = activeHabit();
+    $('main').hidden = !h;
+    $('empty').hidden = !!h;
+    document.documentElement.style.setProperty('--habit', h ? h.color : COLORS[0]);
+    renderNav();
+    if (!h) return;
+    const set = recordSet(h);
+    renderToday(set, poppedKey === todayKey);
+    renderStats(h, set);
+    renderCalendar(set, poppedKey);
+  }
+
+  function renderTabs() {
+    const tabs = $('tabs');
+    tabs.textContent = '';
+    for (const h of state.habits) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tab';
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', String(h.id === state.activeHabitId));
+      b.style.setProperty('--c', h.color);
+      b.dataset.id = h.id;
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      b.append(dot, document.createTextNode(h.name));
+      tabs.append(b);
+    }
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'tab add';
+    add.dataset.action = 'add-habit';
+    add.setAttribute('aria-label', '習慣を追加');
+    add.textContent = '＋';
+    tabs.append(add);
+    const sel = tabs.querySelector('[aria-selected="true"]');
+    if (sel) sel.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+
+  function renderToday(set, bump) {
+    const btn = $('todayBtn');
+    const done = set.has(todayKey);
+    btn.classList.toggle('done', done);
+    btn.setAttribute('aria-pressed', String(done));
+    $('todayMain').textContent = done ? '✓ 今日は達成済み' : '今日やった！';
+    const d = Core.fromKey(todayKey);
+    const wd = '日月火水木金土'[d.getDay()];
+    $('todaySub').textContent = done ? 'タップで取り消し' : `${d.getMonth() + 1}月${d.getDate()}日（${wd}）`;
+    if (bump) restartAnimation(btn, 'bump');
+  }
+
+  function renderStats(h, set) {
+    $('statCurrent').innerHTML = `${Core.currentStreak(set, todayKey)}<small>日</small>`;
+    $('statLongest').innerHTML = `${Core.longestStreak(set, todayKey)}<small>日</small>`;
+    const r = Core.monthRate(set, view.y, view.m, todayKey, startKeyOf(h, set));
+    const t = Core.fromKey(todayKey);
+    const isThisMonth = view.y === t.getFullYear() && view.m === t.getMonth() + 1;
+    $('statRateLabel').textContent = isThisMonth ? '今月の達成率' : `${view.m}月の達成率`;
+    if (r.rate === null) {
+      $('statRate').textContent = '—';
+      $('statRateNote').textContent = '';
+    } else {
+      $('statRate').innerHTML = `${Math.round(r.rate * 100)}<small>%</small>`;
+      $('statRateNote').textContent = `${r.done} / ${r.total}日`;
+    }
+  }
+
+  function renderCalendar(set, poppedKey) {
+    const grid = $('grid');
+    grid.textContent = '';
+    const { y, m } = view;
+    const offset = Core.firstWeekday(y, m);
+    const dim = Core.daysInMonth(y, m);
+    for (let i = 0; i < offset; i++) grid.append(document.createElement('div'));
+    for (let d = 1; d <= dim; d++) {
+      const key = Core.makeKey(y, m, d);
+      const col = (offset + d - 1) % 7;
+      const done = set.has(key);
+      const future = key > todayKey;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'day';
+      b.dataset.key = key;
+      if (col === 0) b.classList.add('sun');
+      if (col === 6) b.classList.add('sat');
+      if (key === todayKey) b.classList.add('today');
+      if (future) { b.classList.add('future'); b.disabled = true; }
+      if (done) {
+        b.classList.add('done');
+        if (col > 0 && d > 1 && set.has(Core.makeKey(y, m, d - 1))) b.classList.add('jl');
+        if (col < 6 && d < dim && set.has(Core.makeKey(y, m, d + 1))) b.classList.add('jr');
+      }
+      b.setAttribute('aria-pressed', String(done));
+      b.setAttribute('aria-label', `${m}月${d}日${done ? ' 達成' : ''}${key === todayKey ? '（今日）' : ''}`);
+      const fill = document.createElement('span');
+      fill.className = 'fill';
+      if (key === poppedKey) fill.classList.add('pop');
+      const num = document.createElement('span');
+      num.className = 'num';
+      num.textContent = d;
+      b.append(fill, num);
+      grid.append(b);
+    }
+  }
+
+  function renderNav() {
+    const t = Core.fromKey(todayKey);
+    const isThisMonth = view.y === t.getFullYear() && view.m === t.getMonth() + 1;
+    $('monthLabel').textContent = `${view.y}年${view.m}月`;
+    $('monthSub').textContent = isThisMonth ? '' : 'タップで今月へ';
+    // 未来は記録できないので、今月より先には進まない
+    $('nextBtn').disabled = isThisMonth || view.y * 12 + view.m > t.getFullYear() * 12 + t.getMonth() + 1;
+  }
+
+  function moveMonth(delta) {
+    const d = new Date(view.y, view.m - 1 + delta, 1);
+    const t = Core.fromKey(todayKey);
+    if (d.getFullYear() * 12 + d.getMonth() > t.getFullYear() * 12 + t.getMonth()) return;
+    view = { y: d.getFullYear(), m: d.getMonth() + 1 };
+    render();
+  }
+  function goThisMonth() {
+    const t = Core.fromKey(todayKey);
+    view = { y: t.getFullYear(), m: t.getMonth() + 1 };
+    render();
+  }
+
+  // ---- テーマ ----
+  function applyTheme() {
+    const root = document.documentElement;
+    if (state.theme === 'auto') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', state.theme);
+    const bg = getComputedStyle(root).getPropertyValue('--bg').trim();
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', bg);
+    for (const b of $('themeSeg').querySelectorAll('button')) {
+      b.setAttribute('aria-pressed', String(b.dataset.themeValue === state.theme));
+    }
+  }
+
+  // ---- 設定シート ----
+  function renderHabitList() {
+    const list = $('habitList');
+    list.textContent = '';
+    list.hidden = state.habits.length === 0;
+    for (const h of state.habits) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = h.color;
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = h.name;
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'btn small';
+      edit.textContent = '編集';
+      edit.dataset.edit = h.id;
+      row.append(dot, name, edit);
+      list.append(row);
+    }
+  }
+  function openSettings() {
+    renderHabitList();
+    applyTheme();
+    $('settingsSheet').showModal();
+  }
+
+  function renderSwatches() {
+    const wrap = $('swatches');
+    wrap.textContent = '';
+    for (const c of COLORS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch';
+      b.style.setProperty('--c', c);
+      b.dataset.color = c;
+      b.setAttribute('aria-label', `色 ${c}`);
+      b.setAttribute('aria-pressed', String(c === editingColor));
+      wrap.append(b);
+    }
+  }
+  function openHabitEditor(id = null) {
+    editingId = id;
+    const h = id ? state.habits.find((x) => x.id === id) : null;
+    const used = new Set(state.habits.map((x) => x.color));
+    editingColor = h ? h.color : (COLORS.find((c) => !used.has(c)) || COLORS[0]);
+    $('habitTitle').textContent = h ? '習慣を編集' : '習慣を追加';
+    $('habitName').value = h ? h.name : '';
+    $('deleteHabitBtn').hidden = !h;
+    renderSwatches();
+    $('habitSheet').showModal();
+    $('habitName').focus();
+  }
+  function saveHabit() {
+    const name = $('habitName').value.trim().slice(0, 40);
+    if (!name) { $('habitName').focus(); return; }
+    if (editingId) {
+      const h = state.habits.find((x) => x.id === editingId);
+      h.name = name;
+      h.color = editingColor;
+    } else {
+      const h = { id: newId(), name, color: editingColor, createdAt: todayKey };
+      state.habits.push(h);
+      state.records[h.id] = {};
+      state.activeHabitId = h.id;
+    }
+    save();
+    $('habitSheet').close();
+    renderHabitList();
+    render();
+  }
+  function deleteHabit() {
+    const h = state.habits.find((x) => x.id === editingId);
+    if (!h) return;
+    if (!confirm(`「${h.name}」とその記録をすべて削除します。よろしいですか？`)) return;
+    state.habits = state.habits.filter((x) => x.id !== h.id);
+    delete state.records[h.id];
+    if (state.activeHabitId === h.id) state.activeHabitId = state.habits[0] ? state.habits[0].id : null;
+    save();
+    $('habitSheet').close();
+    renderHabitList();
+    render();
+    toast('削除しました');
+  }
+
+  // ---- エクスポート／インポート ----
+  function exportData() {
+    const payload = { app: 'keizoku-nikki', exportedAt: new Date().toISOString(), ...state };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `keizoku-nikki-${todayKey}.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    toast('エクスポートしました');
+  }
+  async function importData(file) {
+    try {
+      const next = Core.normalize(JSON.parse(await file.text()));
+      if (!next) throw new Error('invalid');
+      const days = Object.values(next.records).reduce((n, r) => n + Object.keys(r).length, 0);
+      if (!confirm(`習慣 ${next.habits.length} 件・記録 ${days} 日分を読み込みます。\n今のデータは上書きされます。よろしいですか？`)) return;
+      state = next;
+      save();
+      renderHabitList();
+      render();
+      toast('インポートしました');
+    } catch (e) {
+      toast('読み込めませんでした（このアプリのJSONファイルか確認してください）');
+    }
+  }
+
+  // ---- イベント ----
+  $('todayBtn').addEventListener('click', () => toggle(todayKey));
+  $('grid').addEventListener('click', (e) => {
+    const b = e.target.closest('.day');
+    if (b && !b.disabled) toggle(b.dataset.key);
+  });
+  $('tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('.tab');
+    if (!b || !b.dataset.id) return;
+    state.activeHabitId = b.dataset.id;
+    save();
+    render();
+  });
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-action="add-habit"]')) openHabitEditor();
+    const edit = e.target.closest('[data-edit]');
+    if (edit) openHabitEditor(edit.dataset.edit);
+    const close = e.target.closest('[data-close]');
+    if (close) close.closest('dialog').close();
+  });
+  // シートの外側（背景）をタップしたら閉じる
+  for (const dlg of document.querySelectorAll('dialog')) {
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+  }
+  $('swatches').addEventListener('click', (e) => {
+    const b = e.target.closest('.swatch');
+    if (!b) return;
+    editingColor = b.dataset.color;
+    renderSwatches();
+  });
+  $('habitForm').addEventListener('submit', (e) => { e.preventDefault(); saveHabit(); });
+  $('deleteHabitBtn').addEventListener('click', deleteHabit);
+  $('themeSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    state.theme = b.dataset.themeValue;
+    save();
+    applyTheme();
+  });
+  $('exportBtn').addEventListener('click', exportData);
+  $('importBtn').addEventListener('click', () => $('importFile').click());
+  $('importFile').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if (f) importData(f);
+    e.target.value = '';
+  });
+  $('prevBtn').addEventListener('click', () => moveMonth(-1));
+  $('nextBtn').addEventListener('click', () => moveMonth(1));
+  $('monthBtn').addEventListener('click', goThisMonth);
+  $('settingsBtn').addEventListener('click', openSettings);
+
+  // カレンダーの左右スワイプで月移動
+  let sx = 0, sy = 0;
+  $('calendar').addEventListener('touchstart', (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+  $('calendar').addEventListener('touchend', (e) => {
+    const dx = e.changedTouches[0].clientX - sx;
+    const dy = e.changedTouches[0].clientY - sy;
+    if (Math.abs(dx) > 60 && Math.abs(dy) < 40) moveMonth(dx < 0 ? 1 : -1);
+  });
+
+  // 開いたまま日付が変わったときに「今日」を更新
+  function checkDateChange() {
+    const k = Core.toKey(new Date());
+    if (k === todayKey) return;
+    const wasThisMonth = (() => { const t = Core.fromKey(todayKey); return view.y === t.getFullYear() && view.m === t.getMonth() + 1; })();
+    todayKey = k;
+    if (wasThisMonth) goThisMonth(); else render();
+  }
+  setInterval(checkDateChange, 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDateChange(); });
+
+  // システムのダークモード切り替えに追従（meta theme-color 更新用）
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+
+  render();
+  requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add('ready')));
+
+  // オフライン対応（https または localhost のときだけ動作。file:// で開いた場合は何もしない）
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+})();
+</script>
+
+<script>
+/* ===== 自己テスト：index.html?test で開くと Core のテスト結果を表示 ===== */
+if (new URLSearchParams(location.search).has('test')) {
+  const results = [];
+  const eq = (name, actual, expected) => {
+    const ok = JSON.stringify(actual) === JSON.stringify(expected);
+    results.push({ ok, name, actual, expected });
+  };
+  const S = (...keys) => new Set(keys);
+  const range = (from, to) => { const out = []; for (let k = from; k <= to; k = Core.addDays(k, 1)) out.push(k); return out; };
+
+  // ローカル時刻での日付キー（UTC変換によるずれがないこと）
+  eq('0:30 の日付が前日にならない', Core.toKey(new Date(2026, 9, 11, 0, 30)), '2026-10-11');
+  eq('23:59 の日付が翌日にならない', Core.toKey(new Date(2026, 9, 11, 23, 59)), '2026-10-11');
+  eq('fromKey→toKey の往復', Core.toKey(Core.fromKey('2024-02-29')), '2024-02-29');
+  eq('存在しない日付を弾く 2023-02-29', Core.isKey('2023-02-29'), false);
+  eq('存在する日付 2024-02-29', Core.isKey('2024-02-29'), true);
+  eq('不正な形式を弾く', Core.isKey('2024-2-9'), false);
+
+  // 月の日数・うるう年
+  eq('2024年2月は29日', Core.daysInMonth(2024, 2), 29);
+  eq('2023年2月は28日', Core.daysInMonth(2023, 2), 28);
+  eq('2000年2月は29日（400で割り切れる）', Core.daysInMonth(2000, 2), 29);
+  eq('2100年2月は28日（100で割り切れる）', Core.daysInMonth(2100, 2), 28);
+  eq('2026年10月1日は木曜', Core.firstWeekday(2026, 10), 4);
+
+  // 日付の加減算（月またぎ・年またぎ・うるう年）
+  eq('1/31 + 1 = 2/1', Core.addDays('2026-01-31', 1), '2026-02-01');
+  eq('2024/2/28 + 1 = 2/29', Core.addDays('2024-02-28', 1), '2024-02-29');
+  eq('2024/2/29 + 1 = 3/1', Core.addDays('2024-02-29', 1), '2024-03-01');
+  eq('2023/2/28 + 1 = 3/1', Core.addDays('2023-02-28', 1), '2023-03-01');
+  eq('2024/3/1 - 1 = 2/29', Core.addDays('2024-03-01', -1), '2024-02-29');
+  eq('2023/3/1 - 1 = 2/28', Core.addDays('2023-03-01', -1), '2023-02-28');
+  eq('12/31 + 1 = 翌年1/1', Core.addDays('2026-12-31', 1), '2027-01-01');
+  eq('1/1 - 1 = 前年12/31', Core.addDays('2027-01-01', -1), '2026-12-31');
+  eq('365日後（うるう年をまたぐ）', Core.addDays('2024-01-01', 365), '2024-12-31');
+
+  // 現在の連続日数
+  const leap = S(...range('2024-02-27', '2024-03-02'));
+  eq('うるう年の月またぎ：今日まで5日連続', Core.currentStreak(leap, '2024-03-02'), 5);
+  eq('今日は未記録でも昨日まで続いていれば継続', Core.currentStreak(leap, '2024-03-03'), 5);
+  eq('昨日も未記録なら0', Core.currentStreak(leap, '2024-03-04'), 0);
+  eq('平年の月またぎ 2/27〜3/1', Core.currentStreak(S('2023-02-27', '2023-02-28', '2023-03-01'), '2023-03-01'), 3);
+  eq('平年は2/28の次が3/1（2/29を要求しない）', Core.currentStreak(S('2023-02-28', '2023-03-01'), '2023-03-01'), 2);
+  eq('うるう年で2/29が抜けたら途切れる', Core.currentStreak(S('2024-02-28', '2024-03-01'), '2024-03-01'), 1);
+  eq('年またぎ 12/30〜1/2', Core.currentStreak(S(...range('2025-12-30', '2026-01-02')), '2026-01-02'), 4);
+  eq('記録なしは0', Core.currentStreak(S(), '2026-10-11'), 0);
+  eq('今日だけ記録は1', Core.currentStreak(S('2026-10-11'), '2026-10-11'), 1);
+
+  // 最長連続日数
+  const mixed = S(...range('2024-01-30', '2024-02-02'), ...range('2024-02-26', '2024-03-03'), '2024-03-10');
+  eq('複数の連続のうち最長（うるう年2月末〜3月）', Core.longestStreak(mixed, '2024-03-31'), 7);
+  eq('順不同で入っていても正しく数える', Core.longestStreak(new Set(['2026-10-03', '2026-10-01', '2026-10-02']), '2026-10-11'), 3);
+  eq('未来の記録は数えない', Core.longestStreak(S('2026-10-10', '2026-10-11', '2026-10-12', '2026-10-13'), '2026-10-11'), 2);
+  eq('最長は記録なしで0', Core.longestStreak(S(), '2026-10-11'), 0);
+  eq('長期（366日連続・うるう年まるごと）', Core.longestStreak(S(...range('2024-01-01', '2024-12-31')), '2025-01-01'), 366);
+
+  // 月の達成率
+  eq('過去の月（うるう年2月）は29日が分母', Core.monthRate(S(...range('2024-02-01', '2024-02-29')), 2024, 2, '2024-10-01', '2024-01-01'), { done: 29, total: 29, rate: 1 });
+  eq('今月は今日までが分母', Core.monthRate(S('2026-10-01', '2026-10-05'), 2026, 10, '2026-10-11', '2026-01-01'), { done: 2, total: 11, rate: 2 / 11 });
+  eq('開始日が月の途中なら開始日から', Core.monthRate(S('2026-10-09', '2026-10-10'), 2026, 10, '2026-10-11', '2026-10-09'), { done: 2, total: 3, rate: 2 / 3 });
+  eq('未来の月は対象外', Core.monthRate(S(), 2026, 11, '2026-10-11', '2026-01-01').rate, null);
+
+  // インポートの検証
+  eq('壊れたデータは null', Core.normalize({ foo: 1 }), null);
+  const n = Core.normalize({ habits: [{ id: 'a', name: ' 勉強 ', color: 'red' }, { id: 'a', name: '重複' }], records: { a: { '2026-10-01': 1, 'bad': 1, '2023-02-29': 1 } } });
+  eq('正規化：重複IDと不正な日付を除去', [n.habits.length, n.habits[0].name, n.habits[0].color, Object.keys(n.records.a)], [1, '勉強', '#4f8a8b', ['2026-10-01']]);
+
+  const failed = results.filter((r) => !r.ok);
+  document.body.innerHTML = '';
+  const pre = document.createElement('pre');
+  pre.id = 'test-output';
+  pre.style.cssText = 'padding:16px;white-space:pre-wrap;font:14px/1.6 ui-monospace,monospace';
+  pre.textContent = `${failed.length ? 'FAIL' : 'PASS'}: ${results.length - failed.length} / ${results.length}\n\n` +
+    results.map((r) => `${r.ok ? '✓' : '✗'} ${r.name}${r.ok ? '' : `\n    期待: ${JSON.stringify(r.expected)}\n    実際: ${JSON.stringify(r.actual)}`}`).join('\n');
+  document.body.append(pre);
+}
+</script>
+</body>
+</html>
