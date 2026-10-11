@@ -1,6 +1,6 @@
-// オフライン対応用 Service Worker
+﻿// オフライン対応用 Service Worker
 // index.html などを更新して公開したら VERSION を上げると、古いキャッシュが削除される
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = `keizoku-nikki-${VERSION}`;
 const ASSETS = [
   './',
